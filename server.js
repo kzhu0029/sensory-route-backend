@@ -1,9 +1,11 @@
 const express = require("express");
 const cors = require("cors");
+const cron = require("node-cron");
 
 const routesRouter = require("./routes/routes");
 const pedestrianRouter = require("./routes/pedestrian");
 const refugeRouter = require("./routes/refuges");
+const syncPedestrianData = require("./syncPedestrian");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,6 +22,11 @@ app.get("/", (req, res) => {
 app.use("/api/routes", routesRouter);
 app.use("/api/pedestrian", pedestrianRouter);
 app.use("/api/refuges", refugeRouter);
+
+cron.schedule("* * * * *", async () => {
+  console.log("Auto syncing pedestrian data...");
+  await syncPedestrianData();
+});
 
 // Simple error handler
 app.use((err, req, res, next) => {
