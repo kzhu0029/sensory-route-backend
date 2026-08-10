@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const supabase = require("../supabaseClient");
 
-const FRESHNESS_LIMIT_MINUTES = 30;
+const FRESHNESS_LIMIT_MINUTES = 120;
 
 function getWorstCrowdLevel(levels) {
   if (levels.includes("HIGH")) return "HIGH";
