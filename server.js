@@ -5,6 +5,7 @@ const cron = require("node-cron");
 const routesRouter = require("./routes/routes");
 const pedestrianRouter = require("./routes/pedestrian");
 const refugeRouter = require("./routes/refuges");
+const recommendationsRouter = require("./routes/recommendations");
 const syncPedestrianData = require("./syncPedestrian");
 
 const app = express();
@@ -22,9 +23,10 @@ app.get("/", (req, res) => {
 app.use("/api/routes", routesRouter);
 app.use("/api/pedestrian", pedestrianRouter);
 app.use("/api/refuges", refugeRouter);
+app.use("/api/recommendations", recommendationsRouter);
 
-cron.schedule("* * * * *", async () => {
-  console.log("Auto syncing pedestrian data...");
+cron.schedule("*/15 * * * *", async () => {
+  console.log("Auto syncing pedestrian data every 15 minutes...");
   await syncPedestrianData();
 });
 
