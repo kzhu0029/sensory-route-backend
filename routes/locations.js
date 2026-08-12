@@ -6,6 +6,8 @@ const router = express.Router();
 
 const SENSOR_LOCATIONS_URL =
   "https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets/pedestrian-counting-system-sensor-locations/records";
+const LANDMARK_LOCATIONS_URL =
+  "https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets/landmarks-and-places-of-interest-including-schools-theatres-health-services-spor/records";
 const CACHE_MS = 60 * 60 * 1000;
 
 let cache = {
@@ -112,21 +114,75 @@ async function getSensorLocations() {
     .filter(Boolean);
 }
 
+async function getLandmarkLocations() {
+  const firstResponse = await axios.get(LANDMARK_LOCATIONS_URL, {
+    params: { limit: 100, offset: 0 },
+    timeout: 15000,
+  });
+  const results = firstResponse.data.results || [];
+  const totalCount = firstResponse.data.total_count || results.length;
+
+  for (let offset = results.length; offset < totalCount; offset += 100) {
+    const response = await axios.get(LANDMARK_LOCATIONS_URL, {
+      params: { limit: 100, offset },
+      timeout: 15000,
+    });
+    results.push(...(response.data.results || []));
+  }
+
+  return results
+    .map((row, index) =>
+      makeLocation({
+        id: `landmark-${index + 1}`,
+        label: row.feature_name,
+        secondary: `${row.theme || "Landmark"} · ${
+          row.sub_theme || "Place of interest"
+        }`,
+        latitude: row.co_ordinates?.lat,
+        longitude: row.co_ordinates?.lon,
+        source: "landmark",
+      })
+    )
+    .filter(Boolean);
+}
+
+function scoreLocation(location, query) {
+  const label = location.label.toLowerCase();
+  const secondary = location.secondary.toLowerCase();
+  const exactScore = label === query ? 0 : 10;
+  const startsScore = label.startsWith(query) ? 0 : 5;
+  const includesScore =
+    label.includes(query) || secondary.includes(query) ? 0 : 100;
+
+  return exactScore + startsScore + includesScore + label.length / 1000;
+}
+
 async function getLocations() {
   if (Date.now() < cache.expiresAt) {
     return cache.locations;
   }
 
-  const [refugeLocations, sensorLocations] = await Promise.all([
+  const locationSources = await Promise.allSettled([
     getRefugeLocations(),
     getSensorLocations(),
+    getLandmarkLocations(),
   ]);
+  const [refugeLocations, sensorLocations, landmarkLocations] =
+    locationSources.map((result, index) => {
+      if (result.status === "fulfilled") return result.value;
+
+      const sourceNames = ["refuge", "sensor", "landmark"];
+      console.error(`${sourceNames[index]} locations failed:`, result.reason);
+      return [];
+    });
 
   cache = {
     expiresAt: Date.now() + CACHE_MS,
-    locations: dedupeLocations([...sensorLocations, ...refugeLocations]).sort(
-      (first, second) => first.label.localeCompare(second.label)
-    ),
+    locations: dedupeLocations([
+      ...sensorLocations,
+      ...landmarkLocations,
+      ...refugeLocations,
+    ]).sort((first, second) => first.label.localeCompare(second.label)),
   };
 
   return cache.locations;
@@ -143,19 +199,10 @@ router.get("/search", async (req, res) => {
     }
 
     const matches = locations
-      .map((location) => {
-        const label = location.label.toLowerCase();
-        const secondary = location.secondary.toLowerCase();
-        const exactScore = label === query ? 0 : 10;
-        const startsScore = label.startsWith(query) ? 0 : 5;
-        const includesScore =
-          label.includes(query) || secondary.includes(query) ? 0 : 100;
-
-        return {
-          location,
-          score: exactScore + startsScore + includesScore + label.length / 1000,
-        };
-      })
+      .map((location) => ({
+        location,
+        score: scoreLocation(location, query),
+      }))
       .filter((item) => item.score < 100)
       .sort((first, second) => first.score - second.score)
       .slice(0, limit)
