@@ -7,6 +7,7 @@ const pedestrianRouter = require("./routes/pedestrian");
 const refugeRouter = require("./routes/refuges");
 const recommendationsRouter = require("./routes/recommendations");
 const locationsRouter = require("./routes/locations");
+const osrmRouter = require("./routes/osrm");
 const syncPedestrianData = require("./syncPedestrian");
 
 const app = express();
@@ -26,6 +27,7 @@ app.use("/api/pedestrian", pedestrianRouter);
 app.use("/api/refuges", refugeRouter);
 app.use("/api/recommendations", recommendationsRouter);
 app.use("/api/locations", locationsRouter);
+app.use("/api/osrm", osrmRouter);
 
 cron.schedule("*/15 * * * *", async () => {
   console.log("Auto syncing pedestrian data every 15 minutes...");
