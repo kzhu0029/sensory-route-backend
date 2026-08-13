@@ -60,6 +60,22 @@ function normaliseSteps(legs = []) {
   );
 }
 
+function normaliseRoute(route, index) {
+  const coordinatesLatLng =
+    route.geometry?.type === "LineString"
+      ? route.geometry.coordinates.map(([lng, lat]) => [lat, lng])
+      : [];
+
+  return {
+    id: `osrm-route-${index + 1}`,
+    distance_m: route.distance ?? null,
+    duration_s: route.duration ?? null,
+    coordinates: coordinatesLatLng,
+    geometry: route.geometry || null,
+    steps: normaliseSteps(route.legs),
+  };
+}
+
 router.get("/route", async (req, res) => {
   try {
     const origin =
@@ -82,6 +98,10 @@ router.get("/route", async (req, res) => {
     url.searchParams.set("overview", "full");
     url.searchParams.set("geometries", "geojson");
     url.searchParams.set("steps", "true");
+    url.searchParams.set(
+      "alternatives",
+      req.query.alternatives === "true" ? "true" : "false"
+    );
 
     const response = await fetch(url, {
       headers: { Accept: "application/json" },
@@ -96,19 +116,16 @@ router.get("/route", async (req, res) => {
       });
     }
 
-    const route = payload.routes[0];
-    const coordinatesLatLng =
-      route.geometry?.type === "LineString"
-        ? route.geometry.coordinates.map(([lng, lat]) => [lat, lng])
-        : [];
+    const routes = payload.routes.map(normaliseRoute);
+    const route = routes[0];
 
     res.json({
       provider: "OSRM",
       profile,
-      distance_m: route.distance ?? null,
-      duration_s: route.duration ?? null,
-      coordinates: coordinatesLatLng,
-      geometry: route.geometry || null,
+      distance_m: route.distance_m,
+      duration_s: route.duration_s,
+      coordinates: route.coordinates,
+      geometry: route.geometry,
       waypoints: (payload.waypoints || []).map((waypoint) => ({
         name: waypoint.name || null,
         location: Array.isArray(waypoint.location)
@@ -116,7 +133,8 @@ router.get("/route", async (req, res) => {
           : null,
         distance_m: waypoint.distance ?? null,
       })),
-      steps: normaliseSteps(route.legs),
+      steps: route.steps,
+      routes,
       raw_code: payload.code,
     });
   } catch (error) {
