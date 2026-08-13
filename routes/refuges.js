@@ -52,6 +52,8 @@ function normaliseRefuge(row, index) {
   };
 }
 
+// Remove duplicate places using name, type, and coordinates so the frontend
+// does not show the same refuge multiple times.
 function dedupeRefuges(refuges) {
   const seen = new Set();
 
@@ -89,6 +91,8 @@ router.get("/", async (req, res) => {
   const origin =
     originLat !== null && originLng !== null ? [originLat, originLng] : null;
 
+  // Clean invalid rows before distance calculation. Only named locations with
+  // valid coordinates are returned to the frontend.
   let refuges = dedupeRefuges(
     (data || []).map(normaliseRefuge).filter(Boolean)
   );
@@ -121,6 +125,9 @@ router.get("/", async (req, res) => {
     .sort((first, second) => first.distance_m - second.distance_m);
 
   const withinOneKm = withDistance.filter((refuge) => refuge.distance_m <= 1000);
+
+  // US2.1 behaviour: show 1km results first; if none exist, expand to 2km
+  // instead of returning an empty loading state.
   const searchRadiusKm = withinOneKm.length ? 1 : 2;
   const result = withDistance
     .filter((refuge) => refuge.distance_m <= searchRadiusKm * 1000)

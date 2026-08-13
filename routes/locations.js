@@ -15,6 +15,8 @@ let cache = {
   locations: [],
 };
 
+// The search API combines several location sources so users are not limited to
+// a small hard-coded list of start and destination options.
 function numberFrom(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -162,6 +164,8 @@ async function getLocations() {
     return cache.locations;
   }
 
+  // Load sensors, landmarks, and refuge places independently. If one external
+  // source fails, the endpoint can still return matches from the others.
   const locationSources = await Promise.allSettled([
     getRefugeLocations(),
     getSensorLocations(),
@@ -194,6 +198,8 @@ router.get("/search", async (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 8, 20);
     const locations = await getLocations();
 
+    // Empty search returns the first cached options. A typed search returns the
+    // closest label/secondary-text matches for autocomplete.
     if (!query) {
       return res.json(locations.slice(0, limit));
     }

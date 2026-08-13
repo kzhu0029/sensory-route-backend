@@ -22,6 +22,8 @@ app.get("/", (req, res) => {
   res.send("FIT5120 Backend is running!");
 });
 
+// API modules are separated by feature: route geometry, pedestrian activity,
+// refuge locations, searchable locations, and OSRM walking-route candidates.
 app.use("/api/routes", routesRouter);
 app.use("/api/pedestrian", pedestrianRouter);
 app.use("/api/refuges", refugeRouter);

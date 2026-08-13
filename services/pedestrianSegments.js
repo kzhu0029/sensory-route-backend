@@ -11,6 +11,9 @@ let sensorMetadataCache = {
   byId: new Map(),
 };
 
+// When multiple sensors belong to the same street segment, the segment should
+// use the most severe crowd level. This supports the US1.2 rule that High wins
+// over Medium and Low.
 function getWorstCrowdLevel(levels) {
   if (levels.includes("HIGH")) return "HIGH";
   if (levels.includes("MEDIUM")) return "MEDIUM";
@@ -18,6 +21,8 @@ function getWorstCrowdLevel(levels) {
   return "UNKNOWN";
 }
 
+// Only recent sensor observations are reliable enough for route display.
+// Older records are kept for explanation, but the segment becomes Unknown.
 function isFresh(sensingDatetime) {
   if (!sensingDatetime) return false;
 
@@ -64,6 +69,8 @@ function hasValidPedestrianRecord(item) {
   );
 }
 
+// Sensor descriptions come from a separate City of Melbourne dataset. The
+// cache avoids downloading the full metadata list on every frontend request.
 async function getSensorMetadata() {
   if (Date.now() < sensorMetadataCache.expiresAt) {
     return sensorMetadataCache.byId;
@@ -122,6 +129,9 @@ function formatSensors(items, sensorMetadata) {
   }));
 }
 
+// Builds the structured Unknown response used by the frontend details panel.
+// Unknown is not treated as Low; the reason explains whether data is missing,
+// stale, invalid, or unavailable for the mapped segment.
 function buildUnknownSegment(
   segmentId,
   reason,
@@ -151,6 +161,8 @@ async function getPedestrianSegments() {
   const dataRefreshedAt = new Date().toISOString();
   const sensorMetadata = await getSensorMetadata();
 
+  // Read the approved sensor -> segment mapping from Supabase. This connects
+  // point-based pedestrian sensors to line-based route segments.
   const { data: mappings, error: mappingsError } = await supabase
     .from("sensor_segment_mapping")
     .select("location_id, segment_id")
@@ -173,6 +185,8 @@ async function getPedestrianSegments() {
 
   const latestBySensor = new Map();
 
+  // Keep only the latest saved observation for each physical sensor. This
+  // prevents older rows from affecting the current segment classification.
   for (const item of counts || []) {
     if (!latestBySensor.has(item.sensor_id)) {
       latestBySensor.set(item.sensor_id, item);
@@ -183,6 +197,8 @@ async function getPedestrianSegments() {
   const staleGroupedBySegment = new Map();
   const invalidGroupedBySegment = new Map();
 
+  // Split latest sensor records into usable, stale, and invalid groups. Usable
+  // records create Low/Medium/High; stale or invalid records create Unknown.
   for (const item of latestBySensor.values()) {
     const segmentId = Number(item.segment_id);
 
@@ -202,6 +218,7 @@ async function getPedestrianSegments() {
     targetMap.set(segmentId, [...existing, item]);
   }
 
+  // Return one frontend-ready crowd object per mapped segment.
   return segmentIds.map((segmentId) => {
     const segmentMappings = (mappings || []).filter(
       (item) => Number(item.segment_id) === segmentId

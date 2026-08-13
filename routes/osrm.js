@@ -6,11 +6,15 @@ const OSRM_BASE_URL =
   process.env.OSRM_BASE_URL || "https://router.project-osrm.org";
 const ALLOWED_PROFILES = new Set(["foot", "bike", "car", "driving"]);
 
+// Convert query string values into safe numbers. Invalid coordinates should be
+// rejected before calling OSRM.
 function numberFrom(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
 
+// Accepts both origin/destination and start/dest parameter names so the
+// frontend can evolve without breaking this endpoint.
 function parsePosition(query, latKey, lngKey) {
   const lat = numberFrom(query[latKey]);
   const lng = numberFrom(query[lngKey]);
@@ -21,6 +25,8 @@ function parsePosition(query, latKey, lngKey) {
   return { lat, lng };
 }
 
+// OSRM uses profile names in the URL. The frontend sends "foot" for walking,
+// but this also accepts common aliases such as "walking".
 function normaliseProfile(value) {
   const profile = String(value || "foot").toLowerCase();
 
@@ -31,10 +37,14 @@ function normaliseProfile(value) {
   return ALLOWED_PROFILES.has(profile) ? profile : "foot";
 }
 
+// OSRM expects coordinates as longitude,latitude; the frontend and map code use
+// latitude,longitude, so this helper converts the order for the external API.
 function toCoordinatesParam(origin, destination) {
   return `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
 }
 
+// Convert OSRM turn steps into the app's coordinate format. The frontend uses
+// these step geometries to split the route into clickable sections.
 function normaliseSteps(legs = []) {
   return legs.flatMap((leg) =>
     (leg.steps || []).map((step) => ({
@@ -60,6 +70,9 @@ function normaliseSteps(legs = []) {
   );
 }
 
+// Keep one consistent route shape for both the primary route and alternatives.
+// The top-level response still includes the first route for backward
+// compatibility, while "routes" contains every OSRM candidate.
 function normaliseRoute(route, index) {
   const coordinatesLatLng =
     route.geometry?.type === "LineString"
@@ -95,6 +108,10 @@ router.get("/route", async (req, res) => {
     const profile = normaliseProfile(req.query.profile);
     const coordinates = toCoordinatesParam(origin, destination);
     const url = new URL(`/route/v1/${profile}/${coordinates}`, OSRM_BASE_URL);
+
+    // Full GeoJSON geometry is required so the map follows streets instead of
+    // drawing a straight line. alternatives=true lets the frontend choose the
+    // route with lower High crowd exposure.
     url.searchParams.set("overview", "full");
     url.searchParams.set("geometries", "geojson");
     url.searchParams.set("steps", "true");
@@ -119,6 +136,8 @@ router.get("/route", async (req, res) => {
     const routes = payload.routes.map(normaliseRoute);
     const route = routes[0];
 
+    // Return the first route at the top level for existing callers, and return
+    // all candidates in routes for the recommendation logic.
     res.json({
       provider: "OSRM",
       profile,
